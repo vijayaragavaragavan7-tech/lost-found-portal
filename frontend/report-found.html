@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Report Found Item - Lost & Found Portal</title>
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+<div id="navbar" class="navbar"></div>
+
+<div class="container" style="max-width:640px;">
+  <h2 class="page-title">📦 Report a Found Item</h2>
+  <p class="page-subtitle">Thank you for helping a fellow student! Please add as much detail as possible.</p>
+
+  <div class="card">
+    <div id="alertBox"></div>
+
+    <form id="foundForm">
+      <div class="form-group">
+        <label>Item Name / Title *</label>
+        <input type="text" id="title" required placeholder="e.g. Black leather wallet" />
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>Category *</label>
+          <select id="category" required>
+            <option value="Phone">Phone</option>
+            <option value="ID Card">ID Card</option>
+            <option value="Wallet">Wallet</option>
+            <option value="Keys">Keys</option>
+            <option value="Books">Books</option>
+            <option value="Documents">Documents</option>
+            <option value="Bag">Bag</option>
+            <option value="Electronics">Electronics</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Location Found *</label>
+          <input type="text" id="location" required placeholder="e.g. Canteen" />
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Date Found *</label>
+        <input type="date" id="date" required />
+      </div>
+
+      <div class="form-group">
+        <label>Description</label>
+        <textarea id="description" placeholder="Color, brand, distinguishing marks, where exactly it was found, etc."></textarea>
+      </div>
+
+      <div class="form-group">
+        <label>Photo (optional)</label>
+        <input type="file" id="photo" accept="image/*" />
+      </div>
+
+      <button type="submit" class="btn btn-success" style="width:100%;">Submit Found Report</button>
+    </form>
+  </div>
+
+  <div id="matchArea"></div>
+</div>
+
+<script src="js/api.js"></script>
+<script>
+  requireLogin();
+  document.getElementById("date").max = new Date().toISOString().split("T")[0];
+
+  document.getElementById("foundForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const alertBox = document.getElementById("alertBox");
+    const matchArea = document.getElementById("matchArea");
+    alertBox.innerHTML = "";
+    matchArea.innerHTML = "";
+
+    const fd = new FormData();
+    fd.append("type", "found");
+    fd.append("title", document.getElementById("title").value.trim());
+    fd.append("category", document.getElementById("category").value);
+    fd.append("location", document.getElementById("location").value.trim());
+    fd.append("date", document.getElementById("date").value);
+    fd.append("description", document.getElementById("description").value.trim());
+    const photoFile = document.getElementById("photo").files[0];
+    if (photoFile) fd.append("photo", photoFile);
+
+    try {
+      const { item, matches } = await apiRequest("/items", { method: "POST", body: fd });
+      alertBox.innerHTML = `<div class="alert alert-success">✅ Found report submitted successfully! Thank you.</div>`;
+      document.getElementById("foundForm").reset();
+
+      if (matches && matches.length > 0) {
+        matchArea.innerHTML = `
+          <div class="match-banner">
+            <h4>🤖 Possible Match Found!</h4>
+            ${matches
+              .map(
+                (m) => `
+              <div class="match-row">
+                <div>
+                  <strong>${escapeHtml(m.item.title)}</strong> — ${escapeHtml(m.item.location)} (${formatDate(m.item.date)})
+                </div>
+                <div class="match-score">${m.score}% match</div>
+              </div>`
+              )
+              .join("")}
+            <a href="search.html?type=lost" class="btn btn-sm btn-secondary" style="margin-top:8px;">View in Lost Items →</a>
+          </div>`;
+      }
+    } catch (err) {
+      alertBox.innerHTML = `<div class="alert alert-error">${escapeHtml(err.message)}</div>`;
+    }
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>My Reports - Lost & Found Portal</title>
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+<div id="navbar" class="navbar"></div>
+
+<div class="container">
+  <h2 class="page-title">👤 My Reports</h2>
+  <p class="page-subtitle">Everything you've reported as lost or found.</p>
+
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="items" onclick="switchTab('items')">My Items</button>
+    <button class="tab-btn" data-tab="contacts" onclick="switchTab('contacts')">Contact Requests</button>
+  </div>
+
+  <div id="itemsTab">
+    <div id="itemsGrid" class="items-grid"></div>
+    <div id="emptyItems" class="empty-state hidden">
+      <div class="icon">📭</div>
+      <p>You haven't reported anything yet.</p>
+      <a href="report-lost.html" class="btn btn-primary btn-sm" style="margin-top:10px;">Report an Item</a>
+    </div>
+  </div>
+
+  <div id="contactsTab" class="hidden">
+    <div id="contactsList"></div>
+    <div id="emptyContacts" class="empty-state hidden">
+      <div class="icon">💬</div>
+      <p>No contact requests yet.</p>
+    </div>
+  </div>
+</div>
+
+<script src="js/api.js"></script>
+<script>
+  requireLogin();
+  const me = getUser();
+
+  function switchTab(tab) {
+    document.querySelectorAll(".tab-btn").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
+    document.getElementById("itemsTab").classList.toggle("hidden", tab !== "items");
+    document.getElementById("contactsTab").classList.toggle("hidden", tab !== "contacts");
+    if (tab === "contacts") loadContacts();
+  }
+
+  function itemCardHtml(item) {
+    const typeTag = item.type === "lost" ? '<span class="tag tag-lost">Lost</span>' : '<span class="tag tag-found">Found</span>';
+    const statusTag = item.status === "resolved" ? '<span class="tag tag-resolved">Resolved</span>' : "";
+    const thumb = item.photo ? `<div class="thumb" style="background-image:url('${item.photo}')"></div>` : `<div class="thumb">📦</div>`;
+
+    return `
+      <div class="item-card">
+        ${thumb}
+        <div class="body">
+          <div>${typeTag} ${statusTag} <span class="tag tag-category">${escapeHtml(item.category)}</span></div>
+          <h4>${escapeHtml(item.title)}</h4>
+          <div class="meta">📍 ${escapeHtml(item.location)} &nbsp;|&nbsp; 📅 ${formatDate(item.date)}</div>
+        </div>
+        <div class="footer">
+          <span class="meta">Reported ${formatDate(item.createdAt)}</span>
+          <div style="display:flex; gap:6px;">
+            ${item.status !== "resolved" ? `<button class="btn btn-sm btn-success" onclick="resolveItem('${item.id}')">Resolve</button>` : ""}
+            <button class="btn btn-sm btn-danger" onclick="deleteItem('${item.id}')">Delete</button>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  async function loadMyItems() {
+    const grid = document.getElementById("itemsGrid");
+    const empty = document.getElementById("emptyItems");
+    try {
+      const { items } = await apiRequest("/items");
+      const mine = items.filter((i) => i.reportedBy.id === me.id);
+      if (mine.length === 0) {
+        empty.classList.remove("hidden");
+        grid.innerHTML = "";
+      } else {
+        empty.classList.add("hidden");
+        grid.innerHTML = mine.map(itemCardHtml).join("");
+      }
+    } catch (err) {
+      grid.innerHTML = `<div class="alert alert-error">${escapeHtml(err.message)}</div>`;
+    }
+  }
+
+  async function resolveItem(id) {
+    if (!confirm("Mark this item as resolved?")) return;
+    try {
+      await apiRequest(`/items/${id}/resolve`, { method: "PATCH" });
+      loadMyItems();
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  async function deleteItem(id) {
+    if (!confirm("Delete this report permanently?")) return;
+    try {
+      await apiRequest(`/items/${id}`, { method: "DELETE" });
+      loadMyItems();
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  async function loadContacts() {
+    const list = document.getElementById("contactsList");
+    const empty = document.getElementById("emptyContacts");
+    try {
+      const { requests } = await apiRequest("/items/my/contacts");
+      if (requests.length === 0) {
+        empty.classList.remove("hidden");
+        list.innerHTML = "";
+        return;
+      }
+      empty.classList.add("hidden");
+      list.innerHTML = requests
+        .map((r) => {
+          const received = r.toUser.id === me.id;
+          return `
+          <div class="card" style="margin-bottom:12px;">
+            <p style="margin:0 0 6px;">
+              <strong>${received ? "📥 From " + escapeHtml(r.fromUser.name) : "📤 To " + escapeHtml(r.toUser.name)}</strong>
+              <span class="meta"> — about "${escapeHtml(r.itemTitle)}"</span>
+            </p>
+            <p style="margin:0 0 6px;">${escapeHtml(r.message)}</p>
+            <p class="meta" style="margin:0;">
+              ${received ? "Contact them at: " + escapeHtml(r.fromUser.email) : "Waiting for response from " + escapeHtml(r.toUser.email)}
+              &nbsp;|&nbsp; ${formatDate(r.createdAt)}
+            </p>
+          </div>`;
+        })
+        .join("");
+    } catch (err) {
+      list.innerHTML = `<div class="alert alert-error">${escapeHtml(err.message)}</div>`;
+    }
+  }
+
+  loadMyItems();
+</script>
+</body>
+</html>

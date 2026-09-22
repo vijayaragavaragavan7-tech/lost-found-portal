@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Browse Items - Lost & Found Portal</title>
+<link rel="stylesheet" href="css/style.css" />
+<style>
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+    display: flex; align-items: center; justify-content: center; z-index: 100; padding: 16px;
+  }
+  .modal-box { background: white; border-radius: 12px; max-width: 560px; width: 100%; max-height: 90vh; overflow-y: auto; padding: 26px; }
+  .modal-box img { width: 100%; max-height: 260px; object-fit: cover; border-radius: 8px; margin-bottom: 14px; }
+  .modal-close { float: right; background: none; border: none; font-size: 1.3rem; cursor: pointer; color: #888; }
+</style>
+</head>
+<body>
+
+<div id="navbar" class="navbar"></div>
+
+<div class="container">
+  <h2 class="page-title">🔎 Browse Lost &amp; Found Items</h2>
+  <p class="page-subtitle">Search and filter all reported items across campus.</p>
+
+  <div class="filters-bar">
+    <input type="text" id="qSearch" placeholder="Search by name or description..." />
+    <select id="fType">
+      <option value="">All Types</option>
+      <option value="lost">Lost</option>
+      <option value="found">Found</option>
+    </select>
+    <select id="fCategory">
+      <option value="">All Categories</option>
+      <option>Phone</option><option>ID Card</option><option>Wallet</option>
+      <option>Keys</option><option>Books</option><option>Documents</option>
+      <option>Bag</option><option>Electronics</option><option>Other</option>
+    </select>
+    <input type="text" id="fLocation" placeholder="Location..." />
+    <button class="btn btn-primary btn-sm" onclick="loadItems()">Filter</button>
+    <button class="btn btn-secondary btn-sm" onclick="resetFilters()">Reset</button>
+  </div>
+
+  <div id="itemsGrid" class="items-grid"></div>
+  <div id="emptyState" class="empty-state hidden">
+    <div class="icon">📭</div>
+    <p>No items found matching your search.</p>
+  </div>
+</div>
+
+<div id="modalRoot"></div>
+
+<script src="js/api.js"></script>
+<script>
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("type")) document.getElementById("fType").value = params.get("type");
+
+  function resetFilters() {
+    document.getElementById("qSearch").value = "";
+    document.getElementById("fType").value = "";
+    document.getElementById("fCategory").value = "";
+    document.getElementById("fLocation").value = "";
+    loadItems();
+  }
+
+  function itemCardHtml(item) {
+    const typeTag = item.type === "lost" ? '<span class="tag tag-lost">Lost</span>' : '<span class="tag tag-found">Found</span>';
+    const statusTag = item.status === "resolved" ? '<span class="tag tag-resolved">Resolved</span>' : "";
+    const thumb = item.photo
+      ? `<div class="thumb" style="background-image:url('${item.photo}')"></div>`
+      : `<div class="thumb">📦</div>`;
+
+    return `
+      <div class="item-card">
+        ${thumb}
+        <div class="body">
+          <div>${typeTag} ${statusTag} <span class="tag tag-category">${escapeHtml(item.category)}</span></div>
+          <h4>${escapeHtml(item.title)}</h4>
+          <div class="meta">📍 ${escapeHtml(item.location)} &nbsp;|&nbsp; 📅 ${formatDate(item.date)}</div>
+          <div class="desc">${escapeHtml((item.description || "").slice(0, 90))}${item.description && item.description.length > 90 ? "…" : ""}</div>
+        </div>
+        <div class="footer">
+          <span class="meta">by ${escapeHtml(item.reportedBy.name)}</span>
+          <button class="btn btn-sm btn-primary" onclick="viewItem('${item.id}')">View Details</button>
+        </div>
+      </div>`;
+  }
+
+  async function loadItems() {
+    const grid = document.getElementById("itemsGrid");
+    const empty = document.getElementById("emptyState");
+    grid.innerHTML = "";
+
+    const q = document.getElementById("qSearch").value.trim();
+    const type = document.getElementById("fType").value;
+    const category = document.getElementById("fCategory").value;
+    const location = document.getElementById("fLocation").value.trim();
+
+    const qs = new URLSearchParams();
+    if (q) qs.set("q", q);
+    if (type) qs.set("type", type);
+    if (category) qs.set("category", category);
+    if (location) qs.set("location", location);
+
+    try {
+      const { items } = await apiRequest(`/items?${qs.toString()}`, { auth: false });
+      if (items.length === 0) {
+        empty.classList.remove("hidden");
+      } else {
+        empty.classList.add("hidden");
+        grid.innerHTML = items.map(itemCardHtml).join("");
+      }
+    } catch (err) {
+      grid.innerHTML = `<div class="alert alert-error">${escapeHtml(err.message)}</div>`;
+    }
+  }
+
+  async function viewItem(id) {
+    const modalRoot = document.getElementById("modalRoot");
+    try {
+      const { item, matches } = await apiRequest(`/items/${id}`, { auth: false });
+      const user = getUser();
+      const isOwner = user && user.id === item.reportedBy.id;
+      const typeTag = item.type === "lost" ? '<span class="tag tag-lost">Lost</span>' : '<span class="tag tag-found">Found</span>';
+
+      modalRoot.innerHTML = `
+        <div class="modal-overlay" onclick="if(event.target===this) closeModal()">
+          <div class="modal-box">
+            <button class="modal-close" onclick="closeModal()">✕</button>
+            ${item.photo ? `<img src="${item.photo}" alt="${escapeHtml(item.title)}" />` : ""}
+            <div>${typeTag} <span class="tag tag-category">${escapeHtml(item.category)}</span> ${item.status === "resolved" ? '<span class="tag tag-resolved">Resolved</span>' : ""}</div>
+            <h2 style="margin:10px 0 6px;">${escapeHtml(item.title)}</h2>
+            <p class="meta">📍 ${escapeHtml(item.location)} &nbsp;|&nbsp; 📅 ${formatDate(item.date)}</p>
+            <p>${escapeHtml(item.description || "No additional description provided.")}</p>
+            <p class="meta">Reported by: ${escapeHtml(item.reportedBy.name)}</p>
+
+            <div id="modalActions" style="display:flex; gap:10px; margin-top:16px; flex-wrap:wrap;"></div>
+            <div id="modalMatches"></div>
+          </div>
+        </div>`;
+
+      const actions = document.getElementById("modalActions");
+      if (!user) {
+        actions.innerHTML = `<a href="login.html" class="btn btn-primary btn-sm">Login to contact</a>`;
+      } else if (isOwner) {
+        if (item.status !== "resolved") {
+          actions.innerHTML = `<button class="btn btn-success btn-sm" onclick="resolveItem('${item.id}')">✅ Mark as Resolved</button>
+                                <button class="btn btn-danger btn-sm" onclick="deleteItem('${item.id}')">🗑 Delete</button>`;
+        } else {
+          actions.innerHTML = `<button class="btn btn-danger btn-sm" onclick="deleteItem('${item.id}')">🗑 Delete</button>`;
+        }
+      } else {
+        actions.innerHTML = `<button class="btn btn-primary btn-sm" onclick="contactOwner('${item.id}')">📞 Contact ${item.type === "lost" ? "Owner" : "Finder"}</button>`;
+      }
+
+      if (matches && matches.length > 0) {
+        document.getElementById("modalMatches").innerHTML = `
+          <div class="match-banner">
+            <h4>🤖 Possible Match${matches.length > 1 ? "es" : ""} Found</h4>
+            ${matches
+              .map(
+                (m) => `
+              <div class="match-row">
+                <div><strong>${escapeHtml(m.item.title)}</strong> — ${escapeHtml(m.item.location)}</div>
+                <div class="match-score">${m.score}%</div>
+              </div>`
+              )
+              .join("")}
+          </div>`;
+      }
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  function closeModal() {
+    document.getElementById("modalRoot").innerHTML = "";
+  }
+
+  async function resolveItem(id) {
+    if (!confirm("Mark this item as resolved?")) return;
+    try {
+      await apiRequest(`/items/${id}/resolve`, { method: "PATCH" });
+      closeModal();
+      loadItems();
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  async function deleteItem(id) {
+    if (!confirm("Delete this report permanently?")) return;
+    try {
+      await apiRequest(`/items/${id}`, { method: "DELETE" });
+      closeModal();
+      loadItems();
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  async function contactOwner(id) {
+    const message = prompt("Enter a message to send:", "Hi, I think this might be my item. Please get in touch!");
+    if (message === null) return;
+    try {
+      await apiRequest(`/items/${id}/contact`, { method: "POST", body: { message } });
+      alert("Contact request sent! The reporter will see your message and email.");
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  loadItems();
+</script>
+</body>
+</html>

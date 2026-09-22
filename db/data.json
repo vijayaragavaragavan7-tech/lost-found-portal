@@ -1,0 +1,22 @@
+{
+  "users": [
+    {
+      "id": "admin-001",
+      "name": "Campus Admin",
+      "email": "admin@campus.edu",
+      "password": "5b27170a70e04cab0482c42910231bab:1e86b693e815390fff4121fac58bfe03959953e39fa546489be3592a137c13edc0dd6b21d83cc957b7fd95f5663827ca1813ff96d2737b4a6c776d0f93b30555",
+      "role": "admin",
+      "createdAt": "2026-01-01T00:00:00.000Z"
+    },
+    {
+      "id": "008e1150-7ebf-427d-9301-a7097097adb4",
+      "name": "vijayaragavan",
+      "email": "ragavanva67@gmail.com",
+      "password": "0855c3e7bc0c743b204b634422280d93:a6d7479941b4d5da3e481aea024c3a8c0e7cbdf070913c492f1a4dbd48fd09bded1d3f363db251e0247145c5f30640e88ed3d946a5f3ecbaab052a50246aecfa",
+      "role": "student",
+      "createdAt": "2026-09-22T05:32:16.910Z"
+    }
+  ],
+  "items": [],
+  "contactRequests": []
+}

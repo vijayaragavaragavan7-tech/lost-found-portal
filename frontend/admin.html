@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Admin Panel - Lost & Found Portal</title>
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+<div id="navbar" class="navbar"></div>
+
+<div class="container">
+  <h2 class="page-title">👨‍💼 Admin Panel</h2>
+  <p class="page-subtitle">Manage posts, users, and view resolved history.</p>
+
+  <div id="statsGrid" class="stats-grid"></div>
+
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="posts" onclick="switchTab('posts')">Manage Posts</button>
+    <button class="tab-btn" data-tab="users" onclick="switchTab('users')">Users</button>
+    <button class="tab-btn" data-tab="history" onclick="switchTab('history')">Resolved History</button>
+    <button class="tab-btn" data-tab="contacts" onclick="switchTab('contacts')">Contact Requests</button>
+  </div>
+
+  <div id="postsTab">
+    <div class="filters-bar">
+      <select id="postStatusFilter" onchange="loadPosts()">
+        <option value="">All statuses</option>
+        <option value="active">Active</option>
+        <option value="resolved">Resolved</option>
+        <option value="removed">Removed / Spam</option>
+      </select>
+    </div>
+    <table>
+      <thead><tr><th>Type</th><th>Title</th><th>Location</th><th>Date</th><th>Reported By</th><th>Status</th><th>Actions</th></tr></thead>
+      <tbody id="postsBody"></tbody>
+    </table>
+  </div>
+
+  <div id="usersTab" class="hidden">
+    <table>
+      <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Joined</th><th>Actions</th></tr></thead>
+      <tbody id="usersBody"></tbody>
+    </table>
+  </div>
+
+  <div id="historyTab" class="hidden">
+    <table>
+      <thead><tr><th>Type</th><th>Title</th><th>Location</th><th>Reported By</th><th>Resolved On</th></tr></thead>
+      <tbody id="historyBody"></tbody>
+    </table>
+  </div>
+
+  <div id="contactsTab" class="hidden">
+    <table>
+      <thead><tr><th>Item</th><th>From</th><th>To</th><th>Message</th><th>Date</th></tr></thead>
+      <tbody id="contactsBody"></tbody>
+    </table>
+  </div>
+</div>
+
+<script src="js/api.js"></script>
+<script>
+  requireLogin();
+  requireAdmin();
+
+  function switchTab(tab) {
+    ["posts", "users", "history", "contacts"].forEach((t) => {
+      document.getElementById(t + "Tab").classList.toggle("hidden", t !== tab);
+    });
+    document.querySelectorAll(".tab-btn").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
+    if (tab === "users") loadUsers();
+    if (tab === "history") loadHistory();
+    if (tab === "contacts") loadContacts();
+  }
+
+  async function loadStats() {
+    const grid = document.getElementById("statsGrid");
+    try {
+      const s = await apiRequest("/admin/stats");
+      grid.innerHTML = `
+        ${statCard(s.totalUsers, "Total Users")}
+        ${statCard(s.totalItems, "Total Reports")}
+        ${statCard(s.lostItems, "Lost Items")}
+        ${statCard(s.foundItems, "Found Items")}
+        ${statCard(s.activeItems, "Active")}
+        ${statCard(s.resolvedItems, "Resolved")}
+      `;
+    } catch (err) {
+      grid.innerHTML = `<div class="alert alert-error">${escapeHtml(err.message)}</div>`;
+    }
+  }
+  function statCard(num, label) {
+    return `<div class="stat-card"><div class="num">${num}</div><div class="label">${label}</div></div>`;
+  }
+
+  async function loadPosts() {
+    const body = document.getElementById("postsBody");
+    const status = document.getElementById("postStatusFilter").value;
+    try {
+      const { items } = await apiRequest(`/admin/items${status ? "?status=" + status : ""}`);
+      body.innerHTML = items
+        .map(
+          (i) => `
+        <tr>
+          <td>${i.type === "lost" ? '<span class="tag tag-lost">Lost</span>' : '<span class="tag tag-found">Found</span>'}</td>
+          <td>${escapeHtml(i.title)}</td>
+          <td>${escapeHtml(i.location)}</td>
+          <td>${formatDate(i.date)}</td>
+          <td>${escapeHtml(i.reportedBy.name)}<br><span class="meta">${escapeHtml(i.reportedBy.email)}</span></td>
+          <td>${badgeForStatus(i.status)}</td>
+          <td>
+            ${i.status === "removed"
+              ? `<button class="btn btn-sm btn-secondary" onclick="restorePost('${i.id}')">Restore</button>`
+              : `<button class="btn btn-sm btn-danger" onclick="removePost('${i.id}')">Remove (Spam)</button>`}
+          </td>
+        </tr>`
+        )
+        .join("") || `<tr><td colspan="7" class="meta" style="text-align:center;">No posts found.</td></tr>`;
+    } catch (err) {
+      body.innerHTML = `<tr><td colspan="7">${escapeHtml(err.message)}</td></tr>`;
+    }
+  }
+  function badgeForStatus(status) {
+    if (status === "resolved") return '<span class="tag tag-resolved">Resolved</span>';
+    if (status === "removed") return '<span class="tag tag-lost">Removed</span>';
+    return '<span class="tag tag-found">Active</span>';
+  }
+
+  async function removePost(id) {
+    if (!confirm("Remove this post as spam/fake?")) return;
+    try {
+      await apiRequest(`/admin/items/${id}/remove`, { method: "PATCH" });
+      loadPosts();
+      loadStats();
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+  async function restorePost(id) {
+    try {
+      await apiRequest(`/admin/items/${id}/restore`, { method: "PATCH" });
+      loadPosts();
+      loadStats();
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  async function loadUsers() {
+    const body = document.getElementById("usersBody");
+    try {
+      const { users } = await apiRequest("/admin/users");
+      body.innerHTML = users
+        .map(
+          (u) => `
+        <tr>
+          <td>${escapeHtml(u.name)}</td>
+          <td>${escapeHtml(u.email)}</td>
+          <td>${u.role === "admin" ? '<span class="badge-role" style="margin:0;">Admin</span>' : "Student"}</td>
+          <td>${formatDate(u.createdAt)}</td>
+          <td>
+            ${u.role === "admin"
+              ? `<button class="btn btn-sm btn-secondary" onclick="setRole('${u.id}','student')">Demote</button>`
+              : `<button class="btn btn-sm btn-secondary" onclick="setRole('${u.id}','admin')">Make Admin</button>`}
+            <button class="btn btn-sm btn-danger" onclick="deleteUser('${u.id}')">Delete</button>
+          </td>
+        </tr>`
+        )
+        .join("");
+    } catch (err) {
+      body.innerHTML = `<tr><td colspan="5">${escapeHtml(err.message)}</td></tr>`;
+    }
+  }
+
+  async function setRole(id, role) {
+    try {
+      await apiRequest(`/admin/users/${id}/role`, { method: "PATCH", body: { role } });
+      loadUsers();
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+  async function deleteUser(id) {
+    if (!confirm("Delete this user account?")) return;
+    try {
+      await apiRequest(`/admin/users/${id}`, { method: "DELETE" });
+      loadUsers();
+      loadStats();
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  async function loadHistory() {
+    const body = document.getElementById("historyBody");
+    try {
+      const { items } = await apiRequest("/admin/history");
+      body.innerHTML = items
+        .map(
+          (i) => `
+        <tr>
+          <td>${i.type === "lost" ? '<span class="tag tag-lost">Lost</span>' : '<span class="tag tag-found">Found</span>'}</td>
+          <td>${escapeHtml(i.title)}</td>
+          <td>${escapeHtml(i.location)}</td>
+          <td>${escapeHtml(i.reportedBy.name)}</td>
+          <td>${formatDate(i.resolvedAt)}</td>
+        </tr>`
+        )
+        .join("") || `<tr><td colspan="5" class="meta" style="text-align:center;">No resolved items yet.</td></tr>`;
+    } catch (err) {
+      body.innerHTML = `<tr><td colspan="5">${escapeHtml(err.message)}</td></tr>`;
+    }
+  }
+
+  async function loadContacts() {
+    const body = document.getElementById("contactsBody");
+    try {
+      const { requests } = await apiRequest("/admin/contact-requests");
+      body.innerHTML = requests
+        .map(
+          (r) => `
+        <tr>
+          <td>${escapeHtml(r.itemTitle)}</td>
+          <td>${escapeHtml(r.fromUser.name)}</td>
+          <td>${escapeHtml(r.toUser.name)}</td>
+          <td>${escapeHtml(r.message)}</td>
+          <td>${formatDate(r.createdAt)}</td>
+        </tr>`
+        )
+        .join("") || `<tr><td colspan="5" class="meta" style="text-align:center;">No contact requests yet.</td></tr>`;
+    } catch (err) {
+      body.innerHTML = `<tr><td colspan="5">${escapeHtml(err.message)}</td></tr>`;
+    }
+  }
+
+  loadStats();
+  loadPosts();
+</script>
+</body>
+</html>
