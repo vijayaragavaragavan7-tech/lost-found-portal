@@ -6,6 +6,7 @@ const { v4: uuidv4 } = require("uuid");
 const { withDB, load } = require("../db/database");
 const { authRequired } = require("../middleware/auth");
 const { findMatches } = require("../utils/matching");
+const { sendContactEmail } = require("../utils/mailer");
 
 const router = express.Router();
 
@@ -159,7 +160,17 @@ router.post("/:id/contact", authRequired, (req, res) => {
     return { request };
   });
 
-  if (result.error) return res.status(404).json(result);
+   if (result.error) return res.status(404).json(result);
+
+  const { toUser, fromUser, itemTitle, message: sentMessage } = result.request;
+  sendContactEmail({
+    toEmail: toUser.email,
+    toName: toUser.name,
+    fromName: fromUser.name,
+    itemTitle,
+    message: sentMessage,
+  });
+
   res.status(201).json(result);
 });
 
